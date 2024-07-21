@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/csv"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/gocolly/colly/v2"
 )
@@ -31,9 +33,30 @@ func main() {
 		products = append(products, product)
 	})
 	c.OnScraped(func(r *colly.Response) {
+
+		file, err := os.Create("products.csv")
+		if err != nil {
+			log.Fatalln(err)
+		}
+		defer file.Close()
+
+		writer := csv.NewWriter(file)
+
+		headers := []string{
+			"Name",
+			"Price",
+			"URL",
+			"Image",
+		}
+		writer.Write(headers)
+
 		for _, p := range products {
 			fmt.Println(p.name, ":", p.url, p.price)
+			record := []string{p.name, p.price, p.url, p.img}
+			writer.Write(record)
 		}
+
+		defer writer.Flush()
 	})
 	c.Visit("https://www.scrapingcourse.com/ecommerce/")
 
