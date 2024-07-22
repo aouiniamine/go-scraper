@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/gocolly/colly/v2"
 )
@@ -17,15 +18,17 @@ type Product struct {
 var wg sync.WaitGroup
 
 func main() {
+	start := time.Now()
 	productRecords := make(chan Product)
 	// pagesToScrape := make(chan string)
 	wg.Add(2)
-	go writeRecords(productRecords, &wg)
-	go scrapeProducts("https://www.scrapingcourse.com/ecommerce/page/7/", productRecords, &wg)
+	go writeRecords(productRecords)
+	go scrapeProducts("https://www.scrapingcourse.com/ecommerce/page/7/", productRecords)
 	wg.Wait()
+	fmt.Printf("scraping took: %v\n", time.Since(start))
 }
 
-func writeRecords(productRecords chan Product, wg *sync.WaitGroup) {
+func writeRecords(productRecords chan Product) {
 	defer wg.Done()
 	file, err := os.Create("products.csv")
 	if err != nil {
@@ -51,7 +54,7 @@ func writeRecords(productRecords chan Product, wg *sync.WaitGroup) {
 	defer writer.Flush()
 }
 
-func scrapeProducts(page string, productRecords chan Product, wg *sync.WaitGroup) {
+func scrapeProducts(page string, productRecords chan Product) {
 	defer wg.Done()
 	c := colly.NewCollector()
 
