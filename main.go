@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 
 	"github.com/gocolly/colly/v2"
 )
@@ -13,10 +14,46 @@ type Product struct {
 	url, name, price, img string
 }
 
+var wg sync.WaitGroup
+
 func main() {
-	fmt.Println("Hello")
+	productRecords := make(chan Product)
+	// pagesToScrape := make(chan string)
+	wg.Add(2)
+	go writeRecords(productRecords, &wg)
+	go scrapeProducts("https://www.scrapingcourse.com/ecommerce/page/7/", productRecords, &wg)
+	wg.Wait()
+}
+
+func writeRecords(productRecords chan Product, wg *sync.WaitGroup) {
+	defer wg.Done()
+	file, err := os.Create("products.csv")
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+
+	headers := []string{
+		"Name",
+		"Price",
+		"URL",
+		"Image",
+	}
+	writer.Write(headers)
+
+	for p := range productRecords {
+		record := []string{p.name, p.price, p.url, p.img}
+		writer.Write(record)
+	}
+
+	defer writer.Flush()
+}
+
+func scrapeProducts(page string, productRecords chan Product, wg *sync.WaitGroup) {
+	defer wg.Done()
 	c := colly.NewCollector()
-	var products []Product
 
 	c.OnRequest(func(r *colly.Request) {
 		fmt.Println("visiting: ", r.URL)
@@ -30,34 +67,12 @@ func main() {
 		product.url = h.ChildAttr("a", "href")
 		product.name = h.ChildText("h2")
 		product.price = h.ChildText(".price")
-		products = append(products, product)
+		productRecords <- product
+		fmt.Println(product.name, product.price)
 	})
 	c.OnScraped(func(r *colly.Response) {
-
-		file, err := os.Create("products.csv")
-		if err != nil {
-			log.Fatalln(err)
-		}
-		defer file.Close()
-
-		writer := csv.NewWriter(file)
-
-		headers := []string{
-			"Name",
-			"Price",
-			"URL",
-			"Image",
-		}
-		writer.Write(headers)
-
-		for _, p := range products {
-			fmt.Println(p.name, ":", p.url, p.price)
-			record := []string{p.name, p.price, p.url, p.img}
-			writer.Write(record)
-		}
-
-		defer writer.Flush()
+		fmt.Println(page, "Is scraped.")
+		close(productRecords)
 	})
-	c.Visit("https://www.scrapingcourse.com/ecommerce/")
-
+	c.Visit(page)
 }
