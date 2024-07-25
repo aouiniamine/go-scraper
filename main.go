@@ -20,10 +20,20 @@ var wg sync.WaitGroup
 func main() {
 	start := time.Now()
 	productRecords := make(chan Product)
-	// pagesToScrape := make(chan string)
-	wg.Add(2)
+	pagesToScrape := make(map[string]string)
+	getPagesToScrape(pagesToScrape)
+	pagesToScrape["https://www.scrapingcourse.com/ecommerce/page/7/"] = "https://www.scrapingcourse.com/ecommerce/page/7/"
+	fmt.Println(len(pagesToScrape))
+	wg.Add(len(pagesToScrape))
 	go writeRecords(productRecords)
-	go scrapeProducts("https://www.scrapingcourse.com/ecommerce/page/7/", productRecords)
+	i := 0
+	for p := range pagesToScrape {
+		if len(p) > 0 {
+			i++
+			go scrapeProducts(p, productRecords, i == len(pagesToScrape)-1)
+
+		}
+	}
 	wg.Wait()
 	fmt.Printf("scraping took: %v\n", time.Since(start))
 }
@@ -54,7 +64,7 @@ func writeRecords(productRecords chan Product) {
 	defer writer.Flush()
 }
 
-func scrapeProducts(page string, productRecords chan Product) {
+func scrapeProducts(page string, productRecords chan Product, closeChan bool) {
 	defer wg.Done()
 	c := colly.NewCollector()
 
@@ -71,11 +81,32 @@ func scrapeProducts(page string, productRecords chan Product) {
 		product.name = h.ChildText("h2")
 		product.price = h.ChildText(".price")
 		productRecords <- product
-		fmt.Println(product.name, product.price)
+		// fmt.Println(product.name, product.price)
 	})
 	c.OnScraped(func(r *colly.Response) {
 		fmt.Println(page, "Is scraped.")
-		close(productRecords)
+		if closeChan == true {
+			close(productRecords)
+		}
 	})
 	c.Visit(page)
+}
+
+func getPagesToScrape(pagesToScrape map[string]string) {
+	c := colly.NewCollector()
+	c.OnError(func(r *colly.Response, err error) {
+		log.Fatalln(err)
+	})
+	c.OnRequest(func(r *colly.Request) {
+		fmt.Println("getting pages to scrape...")
+	})
+	c.OnScraped(func(r *colly.Response) {
+		fmt.Println("All pages to scraped have been fetched.")
+	})
+	c.OnHTML("ul.page-numbers li", func(h *colly.HTMLElement) {
+		page := h.ChildAttr("a", "href")
+		pagesToScrape[page] = page
+	})
+
+	c.Visit("https://www.scrapingcourse.com/ecommerce/page/7/")
 }
