@@ -17,29 +17,25 @@ type Product struct {
 
 var wg sync.WaitGroup
 
+var productRecords = []Product{}
+
 func main() {
 	start := time.Now()
-	productRecords := make(chan Product)
 	pagesToScrape := make(map[string]string)
-	getPagesToScrape(pagesToScrape)
 	pagesToScrape["https://www.scrapingcourse.com/ecommerce/page/7/"] = "https://www.scrapingcourse.com/ecommerce/page/7/"
-	fmt.Println(len(pagesToScrape))
+	getPagesToScrape("https://www.scrapingcourse.com/ecommerce/page/7/", pagesToScrape)
 	wg.Add(len(pagesToScrape))
-	go writeRecords(productRecords)
-	i := 0
-	for p := range pagesToScrape {
-		if len(p) > 0 {
-			i++
-			go scrapeProducts(p, productRecords, i == len(pagesToScrape)-1)
-
-		}
+	for _, p := range pagesToScrape {
+		go scrapeProducts(p)
 	}
 	wg.Wait()
+	fmt.Println(len(productRecords))
+	writeRecords()
 	fmt.Printf("scraping took: %v\n", time.Since(start))
 }
 
-func writeRecords(productRecords chan Product) {
-	defer wg.Done()
+func writeRecords() {
+	// defer wg.Done()
 	file, err := os.Create("products.csv")
 	if err != nil {
 		log.Fatalln(err)
@@ -56,15 +52,14 @@ func writeRecords(productRecords chan Product) {
 	}
 	writer.Write(headers)
 
-	for p := range productRecords {
+	for _, p := range productRecords {
 		record := []string{p.name, p.price, p.url, p.img}
 		writer.Write(record)
 	}
-
 	defer writer.Flush()
 }
 
-func scrapeProducts(page string, productRecords chan Product, closeChan bool) {
+func scrapeProducts(page string) {
 	defer wg.Done()
 	c := colly.NewCollector()
 
@@ -80,19 +75,15 @@ func scrapeProducts(page string, productRecords chan Product, closeChan bool) {
 		product.url = h.ChildAttr("a", "href")
 		product.name = h.ChildText("h2")
 		product.price = h.ChildText(".price")
-		productRecords <- product
-		// fmt.Println(product.name, product.price)
+		productRecords = append(productRecords, product)
 	})
 	c.OnScraped(func(r *colly.Response) {
 		fmt.Println(page, "Is scraped.")
-		if closeChan == true {
-			close(productRecords)
-		}
 	})
 	c.Visit(page)
 }
 
-func getPagesToScrape(pagesToScrape map[string]string) {
+func getPagesToScrape(page string, pagesToScrape map[string]string) {
 	c := colly.NewCollector()
 	c.OnError(func(r *colly.Response, err error) {
 		log.Fatalln(err)
@@ -105,8 +96,11 @@ func getPagesToScrape(pagesToScrape map[string]string) {
 	})
 	c.OnHTML("ul.page-numbers li", func(h *colly.HTMLElement) {
 		page := h.ChildAttr("a", "href")
-		pagesToScrape[page] = page
+		if len(page) > 0 {
+
+			pagesToScrape[page] = page
+		}
 	})
 
-	c.Visit("https://www.scrapingcourse.com/ecommerce/page/7/")
+	c.Visit(page)
 }
